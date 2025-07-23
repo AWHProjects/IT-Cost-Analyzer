@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:./data/prod.db
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your-32-character-encryption-key-here}
+    volumes:
+      - app_data:/app/data
+      - app_uploads:/app/uploads
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - app_network
+    command: redis-server --appendonly yes
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - app_network
+
+  # Database backup service
+  backup:
+    image: alpine:latest
+    volumes:
+      - app_data:/data
+      - ./backups:/backups
+    command: >
+      sh -c "
+        apk add --no-cache sqlite &&
+        while true; do
+          sqlite3 /data/prod.db '.backup /backups/backup_$(date +%Y%m%d_%H%M%S).db' &&
+          find /backups -name '*.db' -mtime +7 -delete &&
+          sleep 86400
+        done
+      "
+    restart: unless-stopped
+    networks:
+      - app_network
+
+volumes:
+  app_data:
+    driver: local
+  app_uploads:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  app_network:
+    driver: bridge

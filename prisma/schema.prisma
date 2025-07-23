@@ -1,0 +1,341 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  organizations OrganizationMember[]
+  uploadedFiles UploadedFile[]
+  alerts        Alert[]
+  reports       Report[]
+
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members      OrganizationMember[]
+  applications Application[]
+  licenses     License[]
+  integrations Integration[]
+  alerts       Alert[]
+  reports      Report[]
+  uploadedFiles UploadedFile[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           MemberRole @default(MEMBER)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+model Application {
+  id             String            @id @default(cuid())
+  name           String
+  category       ApplicationCategory
+  vendor         String
+  description    String?
+  website        String?
+  logoUrl        String?
+  status         ApplicationStatus @default(ACTIVE)
+  organizationId String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  licenses     License[]
+  usageData    UsageData[]
+  integrations Integration[]
+
+  @@map("applications")
+}
+
+model License {
+  id             String        @id @default(cuid())
+  applicationId  String
+  organizationId String
+  licenseType    LicenseType
+  totalSeats     Int
+  usedSeats      Int           @default(0)
+  costPerSeat    Float
+  billingCycle   BillingCycle
+  startDate      DateTime
+  endDate        DateTime?
+  status         LicenseStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relations
+  application  Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  usageData    UsageData[]
+
+  @@map("licenses")
+}
+
+model UsageData {
+  id            String   @id @default(cuid())
+  applicationId String
+  licenseId     String?
+  userId        String?
+  date          DateTime
+  activeUsers   Int      @default(0)
+  totalSessions Int      @default(0)
+  duration      Int      @default(0) // in minutes
+  features      Json?    // JSON object with feature usage
+  createdAt     DateTime @default(now())
+
+  // Relations
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  license     License?    @relation(fields: [licenseId], references: [id], onDelete: SetNull)
+
+  @@map("usage_data")
+}
+
+model Integration {
+  id             String            @id @default(cuid())
+  name           String
+  type           IntegrationType
+  applicationId  String?
+  organizationId String
+  config         Json              // Integration-specific configuration
+  status         IntegrationStatus @default(INACTIVE)
+  lastSync       DateTime?
+  syncFrequency  String?           // cron expression
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  // Relations
+  application  Application? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("integrations")
+}
+
+model UploadedFile {
+  id             String     @id @default(cuid())
+  filename       String
+  originalName   String
+  mimeType       String
+  size           Int
+  path           String
+  type           FileType
+  status         FileStatus @default(PENDING)
+  uploadedById   String
+  organizationId String
+  processedAt    DateTime?
+  errorMessage   String?
+  metadata       Json?
+  createdAt      DateTime   @default(now())
+
+  // Relations
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("uploaded_files")
+}
+
+model Alert {
+  id             String      @id @default(cuid())
+  title          String
+  message        String
+  type           AlertType
+  severity       AlertSeverity @default(MEDIUM)
+  status         AlertStatus @default(ACTIVE)
+  userId         String?
+  organizationId String
+  metadata       Json?       // Additional context data
+  resolvedAt     DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relations
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("alerts")
+}
+
+model Report {
+  id             String     @id @default(cuid())
+  name           String
+  type           ReportType
+  parameters     Json       // Report generation parameters
+  data           Json?      // Generated report data
+  status         ReportStatus @default(PENDING)
+  generatedById  String
+  organizationId String
+  scheduledFor   DateTime?
+  generatedAt    DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Relations
+  generatedBy  User         @relation(fields: [generatedById], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum ApplicationCategory {
+  PRODUCTIVITY
+  COMMUNICATION
+  DEVELOPMENT
+  DESIGN
+  MARKETING
+  SALES
+  HR
+  FINANCE
+  SECURITY
+  ANALYTICS
+  OTHER
+}
+
+enum ApplicationStatus {
+  ACTIVE
+  INACTIVE
+  DEPRECATED
+}
+
+enum LicenseType {
+  NAMED_USER
+  CONCURRENT_USER
+  SITE_LICENSE
+  ENTERPRISE
+  FREEMIUM
+  TRIAL
+}
+
+enum LicenseStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  SUSPENDED
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+  ONE_TIME
+}
+
+enum IntegrationType {
+  SAAS_API
+  SSO
+  USAGE_ANALYTICS
+  BILLING
+  DIRECTORY
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  SYNCING
+}
+
+enum FileType {
+  INVOICE
+  USAGE_REPORT
+  LICENSE_REPORT
+  USER_EXPORT
+  BILLING_DATA
+  OTHER
+}
+
+enum FileStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AlertType {
+  COST_SPIKE
+  UNUSED_LICENSE
+  EXPIRING_LICENSE
+  SECURITY_RISK
+  INTEGRATION_ERROR
+  USAGE_ANOMALY
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+enum ReportType {
+  COST_ANALYSIS
+  LICENSE_UTILIZATION
+  USER_ACTIVITY
+  SAVINGS_OPPORTUNITIES
+  COMPLIANCE
+  CUSTOM
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}

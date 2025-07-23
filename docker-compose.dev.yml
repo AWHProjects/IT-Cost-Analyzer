@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: base
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=file:./data/dev.db
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev:server
+    ports:
+      - "3001:3001"
+      - "9229:9229" # Debug port
+
+  # Development database viewer
+  prisma-studio:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: npx prisma studio
+    ports:
+      - "5555:5555"
+    depends_on:
+      - app
+    networks:
+      - app_network
